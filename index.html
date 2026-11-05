@@ -1,0 +1,945 @@
+<!DOCTYPE html>
+<html lang="ru" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Траектории воздушных объектов — мультимаршрут</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#f4f6fa;--card:#fff;--text:#1d2433;--muted:#6b7488;--line:#dfe4ee;--accent:#2563eb;--input:#fff}
+[data-theme=dark]{--bg:#0f1420;--card:#171e2d;--text:#e6eaf3;--muted:#98a2b8;--line:#2a3347;--accent:#5b8cff;--input:#0f1420}
+*{box-sizing:border-box}
+body{margin:0;font-family:Inter,Roboto,system-ui,sans-serif;background:var(--bg);color:var(--text);font-size:14px}
+header{display:flex;align-items:center;justify-content:space-between;padding:10px 16px;background:var(--card);border-bottom:1px solid var(--line)}
+header h1{font-size:16px;margin:0;font-weight:600}
+button{font:inherit;cursor:pointer;border:1px solid var(--line);background:var(--card);color:var(--text);padding:7px 12px;border-radius:8px}
+button:hover{border-color:var(--accent)}
+button.primary{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600}
+button:disabled{opacity:.6;cursor:wait}
+.layout{display:grid;grid-template-columns:400px 1fr;grid-template-areas:"panel map" "panel table";gap:12px;padding:12px;align-items:start}
+#panel{grid-area:panel;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px;max-height:calc(100vh - 70px);overflow:auto;position:sticky;top:8px}
+#mapWrap{grid-area:map;min-width:0}
+#map{height:56vh;min-height:340px;border-radius:12px;border:1px solid var(--line)}
+#map.picking{cursor:crosshair}
+#tableWrap{grid-area:table;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px;min-width:0}
+fieldset{border:1px solid var(--line);border-radius:10px;margin:0 0 12px;padding:8px 12px 10px}
+legend{font-weight:600;padding:0 6px;font-size:13px}
+label{display:block;font-size:12px;color:var(--muted);margin:7px 0 3px}
+input,select{width:100%;padding:6px 8px;border:1px solid var(--line);border-radius:8px;background:var(--input);color:var(--text);font:inherit}
+.row{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.inline{display:flex;gap:14px;align-items:center;flex-wrap:wrap;margin:4px 0}
+.inline label{display:inline-flex;gap:5px;align-items:center;margin:0;color:var(--text);font-size:13px}
+.inline input{width:auto}
+.tip{cursor:help;color:var(--accent);font-weight:600}
+.actions{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0}
+#errors{background:#fee2e2;color:#991b1b;border-radius:8px;padding:8px 10px;margin-bottom:10px;display:none;font-size:13px}
+[data-theme=dark] #errors{background:#4a1d1d;color:#fecaca}
+.obj{border:1px solid var(--line);border-radius:10px;margin-bottom:8px;overflow:hidden}
+.obj.open{border-color:var(--accent)}
+.ohead{display:flex;align-items:center;gap:6px;padding:7px 8px;cursor:pointer;background:var(--bg)}
+.ohead input[type=color]{width:26px;height:22px;padding:0;border:0;background:none;flex:none}
+.ohead input[type=checkbox]{width:auto}
+.ohead button{padding:2px 7px}
+.oname{flex:1;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.obody{padding:4px 10px 10px;display:none}
+.obj.open .obody{display:block}
+.wp{border:1px dashed var(--line);border-radius:8px;padding:6px 8px;margin:6px 0}
+.wph{display:flex;gap:4px;align-items:center}
+.wph b{flex:1}
+.wph button{padding:1px 6px;font-size:12px}
+.hint{font-size:11px;color:var(--muted);line-height:1.4}
+.wx{display:grid;grid-template-columns:1fr 1fr;gap:6px 10px;font-size:13px;margin-top:8px}
+.status{font-size:12px;color:var(--muted);margin-top:6px;min-height:16px}
+.spin{display:inline-block;width:12px;height:12px;border:2px solid var(--line);border-top-color:var(--accent);border-radius:50%;animation:s .7s linear infinite;vertical-align:-2px;margin-right:6px}
+@keyframes s{to{transform:rotate(360deg)}}
+.summary{font-size:13px;color:var(--muted);margin:4px 0 6px;line-height:1.5}
+#stale{display:none;background:#fff3c4;color:#5b4a00;border-radius:8px;padding:6px 10px;font-size:13px;margin-bottom:6px}
+#notes{font-size:12px;color:#b45309;margin-bottom:6px}
+.tscroll{overflow:auto;max-height:42vh}
+table{border-collapse:collapse;width:100%;font-size:13px;white-space:nowrap}
+th,td{padding:6px 9px;border-bottom:1px solid var(--line);text-align:right}
+th{position:sticky;top:0;background:var(--card);color:var(--muted);font-weight:500;cursor:default}
+th[data-k]{cursor:pointer}
+td:first-child,th:first-child,td:nth-child(11),th:nth-child(11){text-align:left}
+tbody tr{cursor:pointer}
+tbody tr:hover{background:rgba(37,99,235,.08)}
+tr.act{background:rgba(37,99,235,.07)}
+.dot{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:6px}
+.tabs{display:none;gap:6px;padding:8px 12px 0}
+.tabs button{flex:1}
+.tabs button.on{background:var(--accent);color:#fff;border-color:var(--accent)}
+.legend{background:var(--card);color:var(--text);padding:8px 10px;border-radius:8px;border:1px solid var(--line);font-size:12px;line-height:1.7}
+.legend label{display:flex;margin:0;gap:6px;align-items:center;color:var(--text);font-size:12px}
+.legend input{width:auto}
+.lbl{background:rgba(255,255,255,.9);border:0;box-shadow:none;font-size:10px;padding:1px 4px;color:#111}
+#toast{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);background:#1d2433;color:#fff;padding:9px 14px;border-radius:8px;display:none;z-index:9999;max-width:90vw}
+@media(max-width:900px){
+  .layout{display:block;padding:8px}
+  #panel,#mapWrap,#tableWrap{display:none;max-height:none;position:static}
+  body[data-tab=input] #panel{display:block}
+  body[data-tab=map] #mapWrap{display:block}
+  body[data-tab=table] #tableWrap{display:block}
+  .tabs{display:flex}
+  #map{height:68vh}
+}
+@media print{header,.tabs,#panel,#mapWrap,.actions,.fab{display:none!important}#tableWrap{display:block!important;border:0}.tscroll{max-height:none}}
+/* ----- геолокация: маркер «Вы здесь» ----- */
+.me{position:relative;width:18px;height:18px}
+.me i{position:absolute;inset:0;border-radius:50%;background:#2563eb;border:3px solid #fff;box-shadow:0 0 4px #0008}
+.me b{position:absolute;inset:-6px;border-radius:50%;background:rgba(37,99,235,.35);animation:pulse 1.8s ease-out infinite}
+.me .cone{position:absolute;left:0;top:-17px;width:0;height:0;border-left:9px solid transparent;border-right:9px solid transparent;border-bottom:26px solid rgba(37,99,235,.55);transform-origin:9px 26px}
+@keyframes pulse{0%{transform:scale(.5);opacity:.9}100%{transform:scale(2.2);opacity:0}}
+.geo-btn{width:34px;height:34px;font-size:18px;padding:0;background:#fff;border:2px solid rgba(0,0,0,.25);border-radius:4px;color:#000;line-height:1;cursor:pointer}
+.fab{display:none;position:fixed;right:14px;bottom:14px;width:52px;height:52px;border-radius:50%;font-size:24px;padding:0;z-index:1000;background:var(--accent);border-color:var(--accent);color:#fff;box-shadow:0 2px 8px #0006}
+details summary{cursor:pointer;font-size:13px;margin:6px 0}
+@media(max-width:900px){.fab{display:block}#toast{bottom:78px}}
+</style>
+</head>
+<body data-tab="input">
+<header>
+  <h1>✈ Траектории воздушных объектов · мультимаршрут</h1>
+  <button id="themeBtn" title="Тёмная / светлая тема">🌓</button>
+</header>
+<div class="tabs">
+  <button data-t="input" class="on">Объекты</button>
+  <button data-t="map">Карта</button>
+  <button data-t="table">Таблица</button>
+</div>
+
+<div class="layout">
+<aside id="panel">
+  <div id="errors"></div>
+  <div class="actions" style="margin-top:0">
+    <button class="primary" id="calcBtn" style="flex:1">Рассчитать</button>
+    <button id="addObj">+ Объект</button>
+  </div>
+  <div id="objList"></div>
+
+  <fieldset>
+    <legend>📍 Моё местоположение</legend>
+    <div class="actions" style="margin-top:0">
+      <button id="geoBtn" class="primary" style="flex:1">📍 Моё местоположение</button>
+      <button class="js-center-me">Центрировать на мне</button>
+    </div>
+    <div id="uWarn" class="hint" style="display:none;color:#b45309;margin-bottom:6px"></div>
+    <div class="status" id="uStatus"></div>
+    <div style="font-size:13px;line-height:1.6">Координаты: <b id="uCoords">—</b><br>Точность: <b id="uAcc">—</b> · Движение: <b id="uMove">—</b></div>
+    <div id="uMsg" class="hint" style="color:#b45309"></div>
+    <details id="uManualBox"><summary>Ввести координаты вручную</summary>
+      <div class="row"><div><label>Широта</label><input id="uLat" type="number" step="any"></div><div><label>Долгота</label><input id="uLon" type="number" step="any"></div></div>
+      <div class="actions"><button id="uApply">Применить</button><button id="uClear">Убрать мою точку</button></div>
+    </details>
+    <div class="hint">Положение обрабатывается только в браузере: в сценарий и localStorage оно не попадает. В таблице считаются прямое расстояние и время, за которое объект пролетел бы его от каждой точки до вас.</div>
+  </fieldset>
+
+  <fieldset>
+    <legend>Расчёт</legend>
+    <div class="row">
+      <div><label>Шаг контрольных точек, мин</label>
+        <select data-s="step" data-t="n"><option>10</option><option>15</option><option>30</option><option>60</option></select></div>
+      <div><label>Предел по времени, ч (≤24)</label><input data-s="horizon" data-t="n" type="number" min="0.5" max="24" step="0.5"></div>
+      <div><label>Остановка</label>
+        <select data-s="stop"><option value="last">На последнем WP</option><option value="horizon">Лететь до предела</option></select></div>
+      <div><label>Отрезок между WP <span class="tip" title="Ортодромия — кратчайший путь по большому кругу. Прямая — постоянный курс (прямая линия на карте Меркатора).">ⓘ</span></label>
+        <select data-s="pathType"><option value="gc">Ортодромия</option><option value="rhumb">Прямая (локсодромия)</option></select></div>
+    </div>
+  </fieldset>
+
+  <fieldset>
+    <legend>Погода</legend>
+    <div class="inline">
+      <label><input type="radio" name="wmode" data-s="wmode" value="auto"> Авто (Open-Meteo)</label>
+      <label><input type="radio" name="wmode" data-s="wmode" value="manual"> Вручную</label>
+    </div>
+    <div id="autoBox">
+      <div class="inline"><label><input type="checkbox" data-s="altCorr"> Привести ветер к высоте полёта</label></div>
+      <div class="inline"><label><input type="checkbox" data-s="perPoint"> Уточнять ветер по маршруту <span class="tip" title="Ветер запрашивается для текущего положения на каждом шаге (кэш по сетке 0,5°). Без галочки — ветер в точке старта объекта, но с учётом времени.">ⓘ</span></label></div>
+      <button id="wxBtn" type="button">Обновить погоду (активный объект)</button>
+    </div>
+    <div id="manualBox" style="display:none">
+      <div class="row">
+        <div><label>Ветер, м/с</label><input data-s="mws" data-t="n" type="number" min="0" step="any"></div>
+        <div><label>Откуда дует, °</label><input data-s="mwd" data-t="n" type="number" min="0" max="360" step="any"></div>
+        <div><label>Температура, °C</label><input data-s="mtemp" data-t="n" type="number" step="any"></div>
+        <div><label>Давление, гПа</label><input data-s="mpres" data-t="n" type="number" step="any"></div>
+      </div>
+    </div>
+    <div class="inline"><label><input type="checkbox" data-s="arrows"> Стрелки ветра на карте</label></div>
+    <div class="wx">
+      <div>Ветер: <b id="wWs">—</b></div><div>Откуда: <b id="wWd">—</b></div>
+      <div>Порывы: <b id="wGust">—</b></div><div>Темп.: <b id="wT">—</b></div>
+      <div>Давление: <b id="wP">—</b></div><div>На высоте: <b id="wAlt">—</b></div>
+    </div>
+    <div class="status" id="wxStatus"></div>
+  </fieldset>
+
+  <div class="actions">
+    <button id="demoBtn">Пример</button>
+    <button id="newBtn">Новый</button>
+    <button id="saveJson">Сохранить</button>
+    <button id="loadJson">Загрузить</button>
+    <input type="file" id="fileIn" accept=".json" hidden>
+  </div>
+  <div class="hint">
+    <b>Пояснения.</b> Ветер задаётся метеорологически — «откуда дует». <b>Путевая скорость</b> — скорость относительно земли (воздушная + ветер). <b>Снос</b> = путевой угол − курс по компасу (+ вправо). На участке между WP объект берёт поправку на ветер, чтобы идти точно по линии маршрута; в свободном полёте курс постоянен и ветер сносит объект. Если задано время прибытия на WP — путевая скорость на участке вычисляется из него.
+  </div>
+</aside>
+
+<section id="mapWrap">
+  <div class="actions" style="margin-top:0">
+    <button id="fitAll">Центрировать всё</button>
+    <button id="fitObj">Центрировать объект</button>
+    <button class="js-geo-map">📍 Моё местоположение</button>
+    <button class="js-center-me">Центрировать на мне</button>
+    <button id="clearMap">Очистить карту</button>
+    <button id="pngBtn">Скачать схему PNG</button>
+  </div>
+  <div id="map"></div>
+</section>
+
+<section id="tableWrap">
+  <div class="actions" style="margin-top:0">
+    <button id="csvBtn">Экспорт CSV</button>
+    <button id="jsonBtn">Экспорт JSON</button>
+    <button id="copyBtn">Копировать</button>
+    <button id="printBtn">Печать</button>
+    <select id="tFilter" style="width:auto"></select>
+    <span class="inline" style="margin-left:auto">Координаты:
+      <label><input type="radio" name="cfmt" data-s="cfmt" value="DD"> DD</label>
+      <label><input type="radio" name="cfmt" data-s="cfmt" value="DMS"> DMS</label>
+    </span>
+  </div>
+  <div id="stale">Данные изменены — нажмите «Рассчитать», чтобы обновить траектории.</div>
+  <div class="summary" id="summary">Задайте объекты и нажмите «Рассчитать».</div>
+  <div id="notes"></div>
+  <div class="tscroll">
+    <table id="tbl">
+      <thead><tr>
+        <th data-k="obj">Объект</th><th>№</th><th data-k="t">Время (UTC)</th><th>Широта</th><th>Долгота</th>
+        <th data-k="dist">Пройдено, км</th><th data-k="left">Осталось, км</th><th>Курс, °</th><th title="Прямое расстояние от точки до вашего местоположения">Расст. до меня, км</th><th title="За сколько объект пролетит это расстояние с путевой скоростью на участке">Время до меня</th><th>Участок</th><th>ПС, км/ч</th>
+      </tr></thead>
+      <tbody></tbody>
+    </table>
+  </div>
+</section>
+</div>
+<button class="fab js-geo-map" title="Моё местоположение">📍</button>
+<div id="toast"></div>
+
+<!-- ============================ CORE: geo, weather, расчёт (без DOM) ============================ -->
+<script>
+'use strict';
+/* Модули: geo (сфера, ортодромия/локсодромия) · weather (Open-Meteo) · routes (computeObject) */
+const R_EARTH = 6371008.8, RAD = Math.PI / 180, DEG = 180 / Math.PI;
+const norm180 = x => ((x + 540) % 360 + 360) % 360 - 180;
+const norm360 = x => ((x % 360) + 360) % 360;
+const toMs = (v, u) => u === 'kmh' ? v / 3.6 : u === 'kn' ? v * 0.514444 : v;
+const windVec = (ws, from) => { const to = (from + 180) * RAD; return { x: ws * Math.sin(to), y: ws * Math.cos(to) }; };  // куда дует: восток/север
+const COLORS = ['#e6194b', '#2563eb', '#16a34a', '#f59e0b', '#9333ea', '#0891b2', '#db2777', '#65a30d'];
+
+/* ---------- geo ---------- */
+const geo = (() => {
+  function gcBearing(a, b) {
+    const f1 = a.lat * RAD, f2 = b.lat * RAD, dl = norm180(b.lon - a.lon) * RAD;
+    return norm360(Math.atan2(Math.sin(dl) * Math.cos(f2), Math.cos(f1) * Math.sin(f2) - Math.sin(f1) * Math.cos(f2) * Math.cos(dl)) * DEG);
+  }
+  function gcDist(a, b) {   // haversine
+    const f1 = a.lat * RAD, f2 = b.lat * RAD, df = f2 - f1, dl = norm180(b.lon - a.lon) * RAD;
+    const h = Math.sin(df / 2) ** 2 + Math.cos(f1) * Math.cos(f2) * Math.sin(dl / 2) ** 2;
+    return 2 * R_EARTH * Math.asin(Math.min(1, Math.sqrt(h)));
+  }
+  function gcMove(lat, lon, brg, dist) {
+    const f1 = lat * RAD, th = brg * RAD, d = dist / R_EARTH;
+    const f2 = Math.asin(Math.sin(f1) * Math.cos(d) + Math.cos(f1) * Math.sin(d) * Math.cos(th));
+    const dl = Math.atan2(Math.sin(th) * Math.sin(d) * Math.cos(f1), Math.cos(d) - Math.sin(f1) * Math.sin(f2));
+    return { lat: f2 * DEG, dlon: norm180(dl * DEG) };
+  }
+  function rhumb(a, b) {
+    const f1 = a.lat * RAD, f2 = b.lat * RAD, df = f2 - f1, dl = norm180(b.lon - a.lon) * RAD;
+    const dpsi = Math.log(Math.tan(Math.PI / 4 + f2 / 2) / Math.tan(Math.PI / 4 + f1 / 2));
+    const q = Math.abs(dpsi) > 1e-12 ? df / dpsi : Math.cos(f1);
+    return { dist: Math.hypot(df, q * dl) * R_EARTH, brg: norm360(Math.atan2(dl, dpsi) * DEG) };
+  }
+  function rhMove(lat, lon, brg, dist) {
+    const f1 = lat * RAD, th = brg * RAD, d = dist / R_EARTH, lim = Math.PI / 2 - 1e-9;
+    const f2 = Math.max(-lim, Math.min(lim, f1 + d * Math.cos(th)));
+    const dpsi = Math.log(Math.tan(Math.PI / 4 + f2 / 2) / Math.tan(Math.PI / 4 + f1 / 2));
+    const q = Math.abs(dpsi) > 1e-12 ? (f2 - f1) / dpsi : Math.cos(f1);
+    return { lat: f2 * DEG, dlon: norm180(d * Math.sin(th) / q * DEG) };
+  }
+  return {
+    bearing: (a, b, t) => t === 'rhumb' ? rhumb(a, b).brg : gcBearing(a, b),
+    dist: (a, b, t) => t === 'rhumb' ? rhumb(a, b).dist : gcDist(a, b),
+    move: (lat, lon, brg, d, t) => t === 'rhumb' ? rhMove(lat, lon, brg, d) : gcMove(lat, lon, brg, d)
+  };
+})();
+
+/* ---------- weather ---------- */
+const wxCache = new Map();
+function fetchWeather(lat, lon) {
+  lon = norm180(lon);
+  const key = (Math.round(lat * 2) / 2) + ',' + (Math.round(lon * 2) / 2);
+  if (wxCache.has(key)) return wxCache.get(key);
+  const url = 'https://api.open-meteo.com/v1/forecast?latitude=' + lat.toFixed(4) + '&longitude=' + lon.toFixed(4) +
+    '&current=temperature_2m,surface_pressure,wind_speed_10m,wind_direction_10m,wind_gusts_10m' +
+    '&hourly=wind_speed_10m,wind_direction_10m&wind_speed_unit=ms&timezone=GMT&past_days=1&forecast_days=3';
+  const p = fetch(url).then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); }).then(j => {
+    if (!j.hourly || !j.current) throw new Error('Неожиданный ответ API');
+    return { cur: j.current, t0: Date.parse(j.hourly.time[0] + ':00Z'), ws: j.hourly.wind_speed_10m, wd: j.hourly.wind_direction_10m };
+  });
+  wxCache.set(key, p); p.catch(() => wxCache.delete(key));
+  return p;
+}
+function hourlyWind(w, t) {
+  let i = Math.round((t - w.t0) / 3600000), out = false;
+  if (i < 0) { i = 0; out = true; }
+  if (i > w.ws.length - 1) { i = w.ws.length - 1; out = true; }
+  return { ws: w.ws[i], wd: w.wd[i], out };
+}
+const altFactor = h => h > 10 ? Math.min(Math.pow(h / 10, 0.143), 2.5) : 1;   // степенной закон, 10 м → высота
+
+/* Источник ветра для объекта: async (lat, lon, t, alt) → {ws, wd} на высоте полёта */
+async function buildWind(S, o, flags) {
+  if (S.wmode === 'manual') { const c = { ws: S.mws, wd: S.mwd }; return async () => c; }
+  const corr = a => S.altCorr ? altFactor(a) : 1;
+  const w0 = await fetchWeather(o.lat, o.lon);
+  if (!S.perPoint) return async (lat, lon, t, alt) => { const h = hourlyWind(w0, t); if (h.out) flags.out = true; return { ws: h.ws * corr(alt), wd: h.wd }; };
+  return async (lat, lon, t, alt) => { const h = hourlyWind(await fetchWeather(lat, lon), t); if (h.out) flags.out = true; return { ws: h.ws * corr(alt), wd: h.wd }; };
+}
+
+/* ---------- routes: расчёт одного объекта ----------
+   Свободный полёт: курс постоянен, ветер сносит.
+   По WP: на каждом участке берётся поправка на ветер (идём по линии пути), путевая скорость = V·cos(WCA) + ветер вдоль пути.
+   Контрольные точки — каждые S.step мин; при достижении WP точка ставится на WP, отсчёт интервала идёт от неё. */
+async function computeObject(o, S, wind) {
+  const notes = [], warned = {};
+  const start = Date.parse(o.start + ':00Z'), type = S.pathType;
+  const stepS = S.step * 60, cap = S.horizon * 3600;
+  const wps = o.mode === 'route' ? o.wps : [];
+  const stopMode = o.mode === 'route' ? S.stop : 'horizon';
+  let lat = o.lat, lon = norm180(o.lon), ulon = lon, t = start, dist = 0, j = 0, hdgLast = o.az, guard = 0;
+  const pts = [{ i: 0, kind: 'start', t, lat, lon, ulon, dist: 0 }], wpU = [];
+  while (guard++ < 4000) {
+    const rem = cap - (t - start) / 1000;
+    if (rem <= 1e-6) break;
+    const wp = j < wps.length ? wps[j] : null;
+    if (!wp && stopMode === 'last') break;
+    const alt = wp && wp.alt != null && isFinite(wp.alt) ? wp.alt : o.alt;
+    const w = await wind(lat, lon, t, alt), wv = windVec(w.ws, w.wd);
+    const air = toMs(wp && wp.speed > 0 ? wp.speed : o.speed, o.unit);
+    let track, gs, hdg = null, d = Infinity, seg;
+    if (wp) {
+      const a = { lat, lon }, b = { lat: wp.lat, lon: wp.lon };
+      track = geo.bearing(a, b, type); d = geo.dist(a, b, type);
+      seg = (j ? 'WP' + j : 'Старт') + '→WP' + (j + 1);
+      const arrT = wp.arr ? Date.parse(wp.arr + ':00Z') : NaN;
+      if (arrT > t && d > 1) { gs = d / ((arrT - t) / 1000); seg += ' (по времени)'; }
+      else {
+        if (!isNaN(arrT) && arrT <= t && !warned[j]) { warned[j] = 1; notes.push(`${seg}: заданное время прибытия уже прошло — игнорируется.`); }
+        const tr = track * RAD;
+        const wc = wv.x * Math.cos(tr) - wv.y * Math.sin(tr), wa = wv.x * Math.sin(tr) + wv.y * Math.cos(tr);  // поперёк (вправо +) и вдоль пути
+        if (Math.abs(wc) >= air) { notes.push(`${seg}: боковой ветер ${Math.abs(wc).toFixed(1)} м/с не меньше скорости объекта — маршрут прерван.`); break; }
+        const wca = -Math.asin(wc / air);
+        gs = air * Math.cos(wca) + wa;
+        if (gs < 1) { notes.push(`${seg}: встречный ветер — путевая скорость ≤ 0, маршрут прерван.`); break; }
+        hdg = norm360(track + wca * DEG);
+      }
+    } else {
+      hdg = hdgLast; seg = 'Свободный полёт';
+      const vx = air * Math.sin(hdg * RAD) + wv.x, vy = air * Math.cos(hdg * RAD) + wv.y;
+      gs = Math.hypot(vx, vy);
+      if (gs < 1) { notes.push('Свободный полёт: путевая скорость ≤ 0, расчёт прерван.'); break; }
+      track = norm360(Math.atan2(vx, vy) * DEG);
+    }
+    const drift = hdg == null ? null : norm180(track - hdg);
+    const tt = wp ? d / gs : Infinity, lim = Math.min(stepS, rem);
+    if (wp && tt <= lim + 1e-6) {
+      if (d > 1) {
+        ulon += norm180(wp.lon - lon); lat = wp.lat; lon = norm180(wp.lon); t += tt * 1000; dist += d;
+        pts.push({ i: pts.length, kind: 'wp', wpIdx: j, t, lat, lon, ulon, dist, track, gs, hdg, drift, seg, w });
+      }
+      wpU[j] = ulon; hdgLast = hdg == null ? track : hdg; j++;
+    } else {
+      const m = geo.move(lat, lon, track, gs * lim, type);
+      lat = m.lat; ulon += m.dlon; lon = norm180(ulon); t += lim * 1000; dist += gs * lim;
+      pts.push({ i: pts.length, kind: 'ctl', t, lat, lon, ulon, dist, track, gs, hdg, drift, seg, w });
+    }
+  }
+  const last = pts[pts.length - 1];
+  if (pts.length > 1) { const p1 = pts[1]; Object.assign(pts[0], { track: p1.track, gs: p1.gs, hdg: p1.hdg, drift: p1.drift, seg: p1.seg, w: p1.w }); }
+  last.end = true;
+  pts.forEach(p => p.left = last.dist - p.dist);
+  const finished = j >= wps.length;
+  if (o.mode === 'route' && !finished && !notes.some(n => /прерван/.test(n))) notes.push('Предел по времени достигнут раньше, чем объект дошёл до последнего WP.');
+  return { pts, notes, wpU, finished };
+}
+
+/* Пример: 2 объекта по 3 WP */
+function makeDemo(startStr) {
+  return {
+    settings: { step: 30, horizon: 12, stop: 'last', pathType: 'gc', wmode: 'manual', altCorr: true, perPoint: false, arrows: true, mws: 8, mwd: 270, mtemp: 15, mpres: 1013, cfmt: 'DD' },
+    objects: [
+      { id: 'demo1', name: 'Борт-1', color: COLORS[0], active: true, imode: 'coords', lat: 59.9343, lon: 30.3351, start: startStr, speed: 90, unit: 'kn', alt: 500, mode: 'route', az: 90,
+        wps: [{ lat: 58.5219, lon: 31.2744 }, { lat: 57.8136, lon: 28.3496 }, { lat: 56.8587, lon: 35.9176 }] },
+      { id: 'demo2', name: 'Борт-2', color: COLORS[1], active: true, imode: 'coords', lat: 55.7558, lon: 37.6173, start: startStr, speed: 180, unit: 'kmh', alt: 800, mode: 'route', az: 90,
+        wps: [{ lat: 56.3269, lon: 44.0059 }, { lat: 57.6261, lon: 39.8845 }, { lat: 59.2239, lon: 39.8839 }] }
+    ]
+  };
+}
+</script>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<!-- ============================ UI: state, map, table ============================ -->
+<script>
+'use strict';
+const $ = id => document.getElementById(id);
+const pad = n => String(n).padStart(2, '0');
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const fmtTime = ms => { const d = new Date(ms); return d.getUTCFullYear() + '-' + pad(d.getUTCMonth() + 1) + '-' + pad(d.getUTCDate()) + ' ' + pad(d.getUTCHours()) + ':' + pad(d.getUTCMinutes()); };
+const okLL = (a, b) => Number.isFinite(a) && Number.isFinite(b) && Math.abs(a) <= 90 && Math.abs(b) <= 180;
+const uid = () => Math.random().toString(36).slice(2, 8);
+const nowStr = () => new Date().toISOString().slice(0, 16);
+function fmtCoord(v, isLat, mode) {
+  if (mode !== 'DMS') return v.toFixed(5);
+  const h = isLat ? (v >= 0 ? 'N' : 'S') : (v >= 0 ? 'E' : 'W');
+  const tot = Math.round(Math.abs(v) * 360000) / 100, d = Math.floor(tot / 3600), m = Math.floor((tot - d * 3600) / 60), s = tot - d * 3600 - m * 60;
+  return d + '° ' + pad(m) + '′ ' + s.toFixed(2).padStart(5, '0') + '″ ' + h;
+}
+function toast(msg) { const t = $('toast'); t.textContent = msg; t.style.display = 'block'; clearTimeout(toast._t); toast._t = setTimeout(() => t.style.display = 'none', 3500); }
+
+/* ---------- state ---------- */
+const DEFAULT_S = { step: 30, horizon: 12, stop: 'last', pathType: 'gc', wmode: 'auto', altCorr: true, perPoint: false, arrows: true, mws: 8, mwd: 270, mtemp: 15, mpres: 1013, cfmt: 'DD' };
+let S = { ...DEFAULT_S };
+let state = { objects: [], activeId: null };
+const results = new Map();          // objId → {pts, notes, wpU, finished, flags}
+let pick = null;                    // {oid, kind:'start'|'wp'|'newwp', i}
+let tFilter = 'all', tSort = { k: 'obj', dir: 1 };
+
+function newObj(n) {
+  const k = n - 1, lat = 59.9343 - 1.1 * k, lon = 30.3351 + 0.4 * k;
+  return { id: uid(), name: 'Борт-' + n, color: COLORS[k % COLORS.length], active: true, imode: 'coords', lat: +lat.toFixed(4), lon: +lon.toFixed(4),
+    start: nowStr(), speed: 150, unit: 'kmh', alt: 500, mode: 'route', az: 90,
+    wps: [{ lat: +(lat - 0.4).toFixed(4), lon: +(lon + 1.2).toFixed(4) }, { lat: +(lat + 0.1).toFixed(4), lon: +(lon + 2.6).toFixed(4) }] };
+}
+function normObj(x) {
+  const d = newObj(1);
+  const o = Object.assign(d, x || {});
+  o.id = o.id || uid(); o.wps = Array.isArray(o.wps) ? o.wps.map(w => ({ lat: w.lat, lon: w.lon, arr: w.arr || '', alt: w.alt ?? null, speed: w.speed ?? null })) : [];
+  return o;
+}
+const byId = id => state.objects.find(o => o.id === id);
+const activeObj = () => byId(state.activeId);
+
+/* ---------- dirty-флаги: перерисовка только изменённых частей ---------- */
+const dirty = { panel: false, map: false, table: false };
+let rafId = 0;
+function mark(...k) { k.forEach(x => dirty[x] = true); if (!rafId) rafId = requestAnimationFrame(flush); }
+function flush() {
+  rafId = 0;
+  if (dirty.panel) { renderPanel(); dirty.panel = false; }
+  if (dirty.map) { renderMap(); dirty.map = false; }
+  if (dirty.table) { renderTable(); dirty.table = false; }
+}
+let saveT = 0;
+function changed(stale = true) {
+  if (stale) $('stale').style.display = results.size ? 'block' : 'none';
+  clearTimeout(saveT); saveT = setTimeout(saveLocal, 400);
+}
+function saveLocal() { try { localStorage.setItem('traj-multi-v1', JSON.stringify({ state, S })); } catch (e) { } }
+
+/* ---------- панель объектов ---------- */
+function wpHtml(w, i, n) {
+  return `<div class="wp" data-i="${i}">
+    <div class="wph"><b>WP${i + 1}</b>
+      <button data-act="wpmap" title="Указать точку на карте">📍</button>
+      <button data-act="up" title="Выше" ${i === 0 ? 'disabled' : ''}>▲</button>
+      <button data-act="down" title="Ниже" ${i === n - 1 ? 'disabled' : ''}>▼</button>
+      <button data-act="delwp" title="Удалить">✕</button></div>
+    <div class="row"><input data-f="lat" data-t="n" type="number" step="any" placeholder="Широта" value="${w.lat ?? ''}"><input data-f="lon" data-t="n" type="number" step="any" placeholder="Долгота" value="${w.lon ?? ''}"></div>
+    <label>Прибытие, UTC (необязательно)</label><input data-f="arr" type="datetime-local" value="${esc(w.arr || '')}">
+    <div class="row"><div><label>Высота, м (необяз.)</label><input data-f="alt" data-t="n" type="number" min="0" step="any" value="${w.alt ?? ''}"></div>
+    <div><label>Скорость на участке (необяз.)</label><input data-f="speed" data-t="n" type="number" min="0" step="any" value="${w.speed ?? ''}"></div></div>
+  </div>`;
+}
+function objBody(o) {
+  const im = 'im-' + o.id, sel = (a, b) => a === b ? ' selected' : '';
+  let h = `<label>Имя / ID</label><input data-f="name" value="${esc(o.name)}">
+  <div class="inline"><label><input type="radio" name="${im}" data-f="imode" value="coords"${o.imode === 'coords' ? ' checked' : ''}> Координаты</label>
+  <label><input type="radio" name="${im}" data-f="imode" value="map"${o.imode === 'map' ? ' checked' : ''}> Клик по карте</label>
+  <button data-act="startmap" title="Указать старт кликом по карте">📍 Старт</button></div>
+  <div class="row"><div><label>Широта</label><input data-f="lat" data-t="n" type="number" step="any" value="${o.lat ?? ''}"></div>
+  <div><label>Долгота</label><input data-f="lon" data-t="n" type="number" step="any" value="${o.lon ?? ''}"></div></div>
+  <label>Время старта (UTC)</label><input data-f="start" type="datetime-local" value="${esc(o.start)}">
+  <div class="row"><div><label>Скорость</label><input data-f="speed" data-t="n" type="number" min="0" step="any" value="${o.speed ?? ''}"></div>
+  <div><label>Единицы</label><select data-f="unit"><option value="kmh"${sel(o.unit, 'kmh')}>км/ч</option><option value="ms"${sel(o.unit, 'ms')}>м/с</option><option value="kn"${sel(o.unit, 'kn')}>узлы</option></select></div>
+  <div><label>Высота, м</label><input data-f="alt" data-t="n" type="number" min="0" step="any" value="${o.alt ?? ''}"></div>
+  <div><label>Режим</label><select data-f="mode"><option value="route"${sel(o.mode, 'route')}>По путевым точкам</option><option value="free"${sel(o.mode, 'free')}>Свободный полёт</option></select></div></div>`;
+  if (o.mode === 'free') {
+    h += `<label>Азимут (курс), ° <span class="tip" title="Направление воздушной скорости: 0° — север, 90° — восток. Фактический путь отличается из-за сноса.">ⓘ</span></label><input data-f="az" data-t="n" type="number" min="0" max="360" step="any" value="${o.az ?? ''}">`;
+  } else {
+    const armed = pick && pick.oid === o.id && pick.kind === 'newwp';
+    h += `<label>Маршрут</label>` + o.wps.map((w, i) => wpHtml(w, i, o.wps.length)).join('') +
+      `<div class="actions"><button data-act="addwp">+ WP</button><button data-act="addwpmap">${armed ? '✔ Готово' : '+ WP на карте'}</button></div>`;
+  }
+  return h;
+}
+function renderPanel() {
+  $('objList').innerHTML = state.objects.map(o => `<div class="obj${o.id === state.activeId ? ' open' : ''}" data-id="${o.id}">
+    <div class="ohead" data-act="select"><input type="color" data-f="color" value="${o.color}" title="Цвет маршрута">
+      <span class="oname">${esc(o.name)}</span>
+      <input type="checkbox" data-f="active" ${o.active ? 'checked' : ''} title="Показывать на карте">
+      <button data-act="dup" title="Копировать">⧉</button><button data-act="del" title="Удалить">✕</button></div>
+    <div class="obody">${o.id === state.activeId ? objBody(o) : ''}</div></div>`).join('') || '<div class="hint">Нет объектов. Нажмите «+ Объект».</div>';
+}
+
+/* ---------- делегирование событий панели ---------- */
+document.addEventListener('input', e => {
+  const el = e.target;
+  if (el.dataset.s) {
+    const k = el.dataset.s;
+    if (el.type === 'radio') { if (!el.checked) return; S[k] = el.value; }
+    else if (el.type === 'checkbox') S[k] = el.checked;
+    else if (el.dataset.t === 'n') S[k] = parseFloat(el.value);
+    else S[k] = el.value;
+    if (k === 'wmode') applyWxMode();
+    if (k === 'cfmt') mark('table', 'map');
+    changed(k !== 'cfmt' && k !== 'arrows'); if (k === 'arrows') mark('map'); return;
+  }
+  const f = el.dataset.f; if (!f) return;
+  const card = el.closest('.obj'); const o = card && byId(card.dataset.id); if (!o) return;
+  const v = el.type === 'checkbox' ? el.checked : el.type === 'radio' ? el.value : el.dataset.t === 'n' ? (el.value === '' ? null : parseFloat(el.value)) : el.value;
+  const wpEl = el.closest('.wp');
+  if (wpEl) o.wps[+wpEl.dataset.i][f] = v; else o[f] = v;
+  if (f === 'name') card.querySelector('.oname').textContent = v;
+  if (f === 'mode') mark('panel');
+  mark('map'); if (f === 'name' || f === 'color' || f === 'active') mark('table');
+  changed(f !== 'name' && f !== 'color');
+});
+$('objList').addEventListener('click', e => {
+  if (e.target.matches('input')) return;
+  const btn = e.target.closest('[data-act]'); if (!btn) return;
+  const card = btn.closest('.obj'); const o = byId(card.dataset.id); if (!o) return;
+  const act = btn.dataset.act, wpEl = btn.closest('.wp'), i = wpEl ? +wpEl.dataset.i : -1;
+  if (act === 'select') { state.activeId = o.id; mark('panel', 'table'); updateWeatherBlock(); return; }
+  if (act === 'dup') {
+    const c = normObj(JSON.parse(JSON.stringify(o))); c.id = uid(); c.name = o.name + ' (копия)';
+    c.color = COLORS[state.objects.length % COLORS.length]; c.lat = +(o.lat + 0.3).toFixed(4);
+    state.objects.push(c); state.activeId = c.id; mark('panel', 'map', 'table'); changed(); return;
+  }
+  if (act === 'del') {
+    if (!confirm('Удалить объект «' + o.name + '»?')) return;
+    state.objects = state.objects.filter(x => x !== o); results.delete(o.id);
+    if (state.activeId === o.id) state.activeId = state.objects[0]?.id || null;
+    mark('panel', 'map', 'table'); changed(); return;
+  }
+  if (act === 'startmap') { pick = { oid: o.id, kind: 'start' }; armPick('Кликните по карте — точка старта'); return; }
+  if (act === 'addwp') { const l = o.wps[o.wps.length - 1] || { lat: o.lat, lon: o.lon }; o.wps.push({ lat: +(l.lat + 0.3).toFixed(4), lon: +(l.lon + 0.8).toFixed(4), arr: '', alt: null, speed: null }); }
+  if (act === 'addwpmap') { if (pick && pick.kind === 'newwp') { pick = null; armPick(null); } else { pick = { oid: o.id, kind: 'newwp' }; armPick('Кликайте по карте, чтобы добавлять WP'); } }
+  if (act === 'wpmap') { pick = { oid: o.id, kind: 'wp', i }; armPick('Кликните по карте — новое положение WP' + (i + 1)); }
+  if (act === 'delwp') o.wps.splice(i, 1);
+  if (act === 'up' && i > 0) [o.wps[i - 1], o.wps[i]] = [o.wps[i], o.wps[i - 1]];
+  if (act === 'down' && i < o.wps.length - 1) [o.wps[i + 1], o.wps[i]] = [o.wps[i], o.wps[i + 1]];
+  mark('panel', 'map'); changed();
+});
+function armPick(msg) { $('map').classList.toggle('picking', !!pick); if (msg) { toast(msg); setTab('map'); } mark('panel'); }
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && pick) { pick = null; armPick('Выбор отменён'); } });
+
+/* ---------- карта ---------- */
+const map = L.map('map', { worldCopyJump: true }).setView([57.5, 36], 5);
+map.attributionControl.setPrefix('<a href="https://leafletjs.com" target="_blank" rel="noopener">Leaflet</a>');   // без флага
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 18, attribution: '© OpenStreetMap' }).addTo(map);
+let layers = {}, ptMarkers = {};
+
+map.on('click', e => {
+  const p = e.latlng.wrap(), o = pick ? byId(pick.oid) : activeObj();
+  if (!o) return;
+  const r5 = x => +x.toFixed(5);
+  if (pick) {
+    if (pick.kind === 'start') { o.lat = r5(p.lat); o.lon = r5(p.lng); pick = null; armPick(null); }
+    else if (pick.kind === 'wp') { Object.assign(o.wps[pick.i], { lat: r5(p.lat), lon: r5(p.lng) }); pick = null; armPick(null); }
+    else { o.wps.push({ lat: r5(p.lat), lon: r5(p.lng), arr: '', alt: null, speed: null }); }
+  } else if (o.imode === 'map') { o.lat = r5(p.lat); o.lon = r5(p.lng); }
+  else return;
+  mark('panel', 'map'); changed();
+});
+
+const flagIcon = col => L.divIcon({ className: '', iconSize: [18, 18], iconAnchor: [3, 16],
+  html: `<svg width="18" height="18" viewBox="0 0 16 16"><path d="M3 1v14" stroke="${col}" stroke-width="2"/><path d="M3 2h10l-3 3.5L13 9H3z" fill="${col}" stroke="#fff" stroke-width=".6"/></svg>` });
+const startIcon = (col, n) => L.divIcon({ className: '', iconSize: [22, 22], iconAnchor: [11, 11],
+  html: `<div style="width:22px;height:22px;border-radius:50%;background:${col};border:3px solid #fff;box-shadow:0 0 4px #0008;color:#fff;font:600 11px/16px sans-serif;text-align:center">${n}</div>` });
+const windArrow = (dir, col) => L.divIcon({ className: '', iconSize: [22, 22], iconAnchor: [11, 11],
+  html: `<svg width="22" height="22" viewBox="0 0 24 24" style="transform:rotate(${(dir + 180) % 360}deg)"><path d="M12 2 L18 20 L12 16 L6 20Z" fill="#0ea5e9" stroke="#075985" stroke-width="1"/></svg>` });
+
+const legend = L.control({ position: 'bottomright' });
+let legendDiv;
+legend.onAdd = () => { legendDiv = L.DomUtil.create('div', 'legend'); L.DomEvent.disableClickPropagation(legendDiv);
+  legendDiv.addEventListener('change', e => { const o = byId(e.target.dataset.id); if (o) { o.active = e.target.checked; mark('map', 'panel', 'table'); changed(false); } }); return legendDiv; };
+legend.addTo(map);
+
+function popupHtml(o, p) {
+  return `<b style="color:${o.color}">${esc(o.name)}</b> · точка ${p.i}<br>${fmtTime(p.t)} UTC<br>${fmtCoord(p.lat, true, S.cfmt)}, ${fmtCoord(p.lon, false, S.cfmt)}<br>` +
+    `Пройдено: ${(p.dist / 1000).toFixed(1)} км · осталось: ${(p.left / 1000).toFixed(1)} км<br>` +
+    (p.track != null ? `Путевой угол: ${p.track.toFixed(1)}°` + (p.hdg != null ? ` · курс ${p.hdg.toFixed(1)}° · снос ${p.drift >= 0 ? '+' : ''}${p.drift.toFixed(1)}°` : '') + `<br>ПС: ${(p.gs * 3.6).toFixed(0)} км/ч · ${esc(p.seg)}` : '');
+}
+
+function renderMap() {
+  Object.values(layers).forEach(l => map.removeLayer(l)); layers = {}; ptMarkers = {};
+  const total = [...results.values()].reduce((s, r) => s + r.pts.length, 0);
+  state.objects.forEach((o, oi) => {
+    if (!o.active) return;
+    const lg = L.layerGroup().addTo(map); layers[o.id] = lg;
+    const r = results.get(o.id), col = o.color;
+    if (r) L.polyline(r.pts.map(p => [p.lat, p.ulon]), { color: col, weight: 3, opacity: .9 }).addTo(lg);
+    else if (o.mode === 'route') {
+      const ll = [[o.lat, o.lon], ...o.wps.map(w => [w.lat, w.lon])].filter(a => okLL(a[0], a[1]));
+      if (ll.length > 1) L.polyline(ll, { color: col, weight: 2, dashArray: '6 6', opacity: .6 }).addTo(lg);
+    }
+    if (o.mode === 'route') o.wps.forEach((w, i) => {
+      if (!okLL(w.lat, w.lon)) return;
+      const ul = r && r.wpU[i] != null ? r.wpU[i] : w.lon;
+      L.marker([w.lat, ul], { icon: flagIcon(col), zIndexOffset: 200 }).addTo(lg)
+        .bindTooltip('WP' + (i + 1), { permanent: true, direction: 'right', offset: [6, -4], className: 'lbl' })
+        .bindPopup(`<b style="color:${col}">${esc(o.name)}</b> · WP${i + 1}<br>${fmtCoord(w.lat, true, S.cfmt)}, ${fmtCoord(w.lon, false, S.cfmt)}`);
+    });
+    const sm = L.marker([o.lat, o.lon], { icon: startIcon(col, oi + 1), draggable: true, zIndexOffset: 300 }).addTo(lg);
+    if (okLL(o.lat, o.lon)) sm.setLatLng([o.lat, r ? r.pts[0].ulon : o.lon]);
+    sm.on('dragend', () => { const p = sm.getLatLng().wrap(); o.lat = +p.lat.toFixed(5); o.lon = +p.lng.toFixed(5); mark('panel', 'map'); changed(); });
+    ptMarkers[o.id] = [sm];
+    if (!r) { sm.bindPopup(`<b style="color:${col}">${esc(o.name)}</b> · старт`); return; }
+    sm.bindPopup(popupHtml(o, r.pts[0]));
+    r.pts.forEach((p, i) => {
+      if (i === 0) return;
+      const isW = p.kind === 'wp', isEnd = p.end;
+      const m = L.circleMarker([p.lat, p.ulon], { radius: isEnd ? 8 : isW ? 7 : 5, color: col, weight: 2, fillColor: isW || isEnd ? '#fff' : col, fillOpacity: 1 }).addTo(lg);
+      m.bindPopup(popupHtml(o, p));
+      m.bindTooltip(p.i + ' · ' + pad(new Date(p.t).getUTCHours()) + ':' + pad(new Date(p.t).getUTCMinutes()), { permanent: total <= 60, direction: 'top', offset: [0, -6], className: 'lbl' });
+      ptMarkers[o.id][i] = m;
+    });
+    if (S.arrows) {
+      const every = Math.max(1, Math.ceil(r.pts.length / 8));
+      r.pts.forEach(p => { if (p.w && (p.i === 0 || (S.perPoint && p.i % every === 0))) L.marker([p.lat, p.ulon], { icon: windArrow(p.w.wd, col), interactive: false, zIndexOffset: -500 }).addTo(lg); });
+    }
+  });
+  legendDiv.innerHTML = state.objects.map(o => `<label><input type="checkbox" data-id="${o.id}" ${o.active ? 'checked' : ''}><span class="dot" style="background:${o.color}"></span>${esc(o.name)}</label>`).join('') +
+    '<hr style="border:0;border-top:1px solid var(--line);margin:4px 0">● контрольная · ○ WP / финиш · ⚑ путевая точка<br><span style="color:#0ea5e9">➤</span> ветер (куда дует)<br><span style="color:#2563eb">◉</span> вы здесь (GPS)';
+}
+function fitBounds(objs, withUser) {
+  const ll = [];
+  if (withUser && user.lat != null) ll.push([user.lat, user.lng]);
+  objs.forEach(o => { const r = results.get(o.id); if (r) r.pts.forEach(p => ll.push([p.lat, p.ulon])); else { if (okLL(o.lat, o.lon)) ll.push([o.lat, o.lon]); o.wps.forEach(w => okLL(w.lat, w.lon) && ll.push([w.lat, w.lon])); } });
+  if (ll.length) map.fitBounds(L.latLngBounds(ll).pad(0.15));
+}
+$('fitAll').onclick = () => fitBounds(state.objects.filter(o => o.active), true);
+$('fitObj').onclick = () => { const o = activeObj(); if (o) fitBounds([o]); };
+$('clearMap').onclick = () => { results.clear(); $('summary').textContent = 'Результаты очищены.'; $('notes').textContent = ''; $('stale').style.display = 'none'; mark('map', 'table'); };
+
+/* ---------- таблица ---------- */
+function rowsAll() {
+  const rows = [];
+  state.objects.forEach((o, oi) => { if (!o.active) return; const r = results.get(o.id); if (r) r.pts.forEach(p => rows.push({ o, oi, p })); });
+  return rows;
+}
+function rowsView() {
+  let rows = rowsAll();
+  if (tFilter !== 'all') rows = rows.filter(x => x.o.id === tFilter);
+  const key = { obj: x => x.oi * 1e5 + x.p.i, t: x => x.p.t * 100 + x.oi, dist: x => x.p.dist, left: x => x.p.left }[tSort.k];
+  return rows.sort((a, b) => (key(a) - key(b)) * tSort.dir);
+}
+/* Расстояние и «время подлёта» от точки до пользователя: прямая по большому кругу, скорость — ПС на участке */
+const distMe = p => geo.dist({ lat: user.lat, lon: user.lng }, { lat: p.lat, lon: p.lon }, 'gc');
+const fmtDur = s => { const m = Math.round(s / 60); return m >= 60 ? Math.floor(m / 60) + ' ч ' + pad(m % 60) + ' мин' : m + ' мин'; };
+function toMe(o, p) {
+  if (user.lat == null) return ['—', '—'];
+  const d = distMe(p), v = p.gs > 0 ? p.gs : toMs(o.speed, o.unit);
+  return [(d / 1000).toFixed(1), fmtDur(d / v)];
+}
+const segText = p => p.seg + (p.kind === 'wp' ? ' · прибытие WP' + (p.wpIdx + 1) : '') + (p.end ? ' · финиш' : '') + (p.kind === 'start' ? ' · старт' : '');
+function renderTable() {
+  const sel = $('tFilter'); if (tFilter !== 'all' && !byId(tFilter)) tFilter = 'all';
+  sel.innerHTML = '<option value="all">Все объекты</option>' + state.objects.map(o => `<option value="${o.id}"${o.id === tFilter ? ' selected' : ''}>${esc(o.name)}</option>`).join('');
+  const rows = rowsView(), color = new Map(state.objects.map(o => [o.id, o.color]));
+  $('tbl').querySelector('tbody').innerHTML = rows.map(({ o, p }) =>
+    `<tr class="${o.id === state.activeId ? 'act' : ''}" style="box-shadow:inset 4px 0 0 ${color.get(o.id)}" data-o="${o.id}" data-i="${p.i}">` +
+    `<td><span class="dot" style="background:${o.color}"></span>${esc(o.name)}</td><td>${p.i}</td><td>${fmtTime(p.t)}</td><td>${fmtCoord(p.lat, true, S.cfmt)}</td><td>${fmtCoord(p.lon, false, S.cfmt)}</td>` +
+    `<td>${(p.dist / 1000).toFixed(1)}</td><td>${(p.left / 1000).toFixed(1)}</td><td>${p.track != null ? p.track.toFixed(1) : '—'}</td><td>${toMe(o, p).join('</td><td>')}</td><td>${esc(segText(p))}</td><td>${p.gs != null ? (p.gs * 3.6).toFixed(0) : '—'}</td></tr>`).join('');
+}
+$('tFilter').onchange = e => { tFilter = e.target.value; mark('table'); };
+$('tbl').querySelector('thead').addEventListener('click', e => {
+  const k = e.target.dataset.k; if (!k) return;
+  tSort = tSort.k === k ? { k, dir: -tSort.dir } : { k, dir: 1 }; mark('table');
+});
+$('tbl').querySelector('tbody').addEventListener('click', e => {
+  const tr = e.target.closest('tr'); if (!tr) return;
+  const m = ptMarkers[tr.dataset.o]?.[+tr.dataset.i]; if (!m) return;
+  setTab('map'); map.setView(m.getLatLng(), Math.max(map.getZoom(), 8)); m.openPopup();
+});
+
+/* ---------- валидация ---------- */
+function validate() {
+  const e = [];
+  if (!(S.horizon > 0 && S.horizon <= 24)) e.push('Предел по времени — от 0,5 до 24 часов.');
+  if (S.wmode === 'manual') {
+    if (!(S.mws >= 0)) e.push('Скорость ветра не может быть отрицательной.');
+    if (!(S.mwd >= 0 && S.mwd <= 360)) e.push('Направление ветра — от 0 до 360°.');
+  }
+  state.objects.filter(o => o.active).forEach(o => {
+    const n = o.name || 'Объект';
+    if (!okLL(o.lat, o.lon)) e.push(`${n}: широта −90…90, долгота −180…180 (старт).`);
+    if (isNaN(Date.parse(o.start + ':00Z'))) e.push(`${n}: укажите время старта (UTC).`);
+    if (!(o.speed > 0)) e.push(`${n}: скорость должна быть больше нуля.`);
+    if (!(o.alt >= 0)) e.push(`${n}: высота не может быть отрицательной.`);
+    if (o.mode === 'free') { if (!(o.az >= 0 && o.az <= 360)) e.push(`${n}: азимут должен быть от 0 до 360°.`); }
+    else {
+      if (!o.wps.length) e.push(`${n}: добавьте хотя бы одну путевую точку.`);
+      o.wps.forEach((w, i) => {
+        if (!okLL(w.lat, w.lon)) e.push(`${n}, WP${i + 1}: широта −90…90, долгота −180…180.`);
+        if (w.arr && isNaN(Date.parse(w.arr + ':00Z'))) e.push(`${n}, WP${i + 1}: неверное время прибытия.`);
+        if (w.speed != null && !(w.speed > 0)) e.push(`${n}, WP${i + 1}: скорость на участке должна быть больше нуля.`);
+        if (w.alt != null && !(w.alt >= 0)) e.push(`${n}, WP${i + 1}: высота не может быть отрицательной.`);
+      });
+    }
+  });
+  return e;
+}
+function showErrors(list) { const b = $('errors'); b.style.display = list.length ? 'block' : 'none'; b.innerHTML = list.map(s => '• ' + esc(s)).join('<br>'); }
+
+/* ---------- расчёт ---------- */
+async function run() {
+  const errs = validate(); showErrors(errs);
+  if (errs.length) { setTab('input'); return; }
+  const act = state.objects.filter(o => o.active);
+  if (!act.length) return showErrors(['Нет активных объектов.']);
+  const btn = $('calcBtn'); btn.disabled = true; results.clear();
+  const sum = [], notes = [];
+  try {
+    let k = 0;
+    for (const o of act) {
+      btn.textContent = `Считаю ${++k}/${act.length}…`;
+      if (S.wmode === 'auto') $('wxStatus').innerHTML = '<span class="spin"></span>Запрос погоды…';
+      const flags = {}; let res;
+      try { res = await computeObject(o, S, await buildWind(S, o, flags)); }
+      catch (err) {
+        if (S.wmode !== 'auto') throw err;
+        S.wmode = 'manual'; syncSettings();     // fallback: ручной ввод
+        $('wxStatus').textContent = 'Погода недоступна (' + err.message + '). Переключено на ручной ввод.';
+        toast('API погоды недоступен — используется ручной ветер');
+        res = await computeObject(o, S, await buildWind(S, o, flags));
+      }
+      if (flags.out) res.notes.push('Часть времени вне диапазона прогноза Open-Meteo — использован ближайший час.');
+      results.set(o.id, res);
+      const last = res.pts[res.pts.length - 1];
+      sum.push(`<span class="dot" style="background:${o.color}"></span><b>${esc(o.name)}</b>: ${res.pts.length} точек, ${(last.dist / 1000).toFixed(1)} км, финиш ${fmtTime(last.t)} UTC`);
+      res.notes.forEach(n => notes.push(o.name + ' — ' + n));
+    }
+    $('summary').innerHTML = sum.join('<br>');
+    $('notes').innerHTML = notes.map(esc).join('<br>');
+    $('stale').style.display = 'none';
+    mark('map', 'table'); changed(false);
+    setTimeout(() => fitBounds(act), 30);
+    updateWeatherBlock();
+  } catch (err) { showErrors(['Ошибка расчёта: ' + err.message]); }
+  finally { btn.disabled = false; btn.textContent = 'Рассчитать'; }
+}
+$('calcBtn').onclick = run;
+
+/* ---------- погодный блок ---------- */
+function applyWxMode() { $('autoBox').style.display = S.wmode === 'auto' ? '' : 'none'; $('manualBox').style.display = S.wmode === 'manual' ? '' : 'none'; }
+async function updateWeatherBlock() {
+  const o = activeObj(); if (!o) return;
+  const set = (...a) => ['wWs', 'wWd', 'wGust', 'wT', 'wP', 'wAlt'].forEach((id, i) => $(id).textContent = a[i]);
+  if (S.wmode === 'manual') { set(S.mws + ' м/с', S.mwd + '°', '—', S.mtemp + ' °C', S.mpres + ' гПа', 'как задано'); $('wxStatus').textContent = 'Ручной ввод (для всех объектов).'; return; }
+  if (!okLL(o.lat, o.lon)) return;
+  try {
+    $('wxStatus').innerHTML = '<span class="spin"></span>Запрос погоды…';
+    const w = await fetchWeather(o.lat, o.lon), t = Date.parse(o.start + ':00Z'), h = hourlyWind(w, isNaN(t) ? Date.now() : t);
+    set(h.ws.toFixed(1) + ' м/с (10 м)', h.wd.toFixed(0) + '°', w.cur.wind_gusts_10m.toFixed(1) + ' м/с', w.cur.temperature_2m.toFixed(1) + ' °C', w.cur.surface_pressure.toFixed(0) + ' гПа',
+      S.altCorr ? (h.ws * altFactor(o.alt || 0)).toFixed(1) + ' м/с' : 'без поправки');
+    $('wxStatus').textContent = 'Open-Meteo · «' + o.name + '»: ветер на время старта; температура и давление — текущие.';
+  } catch (err) { $('wxStatus').textContent = 'Ошибка: ' + err.message + '. Используйте ручной ввод.'; }
+}
+$('wxBtn').onclick = () => { wxCache.clear(); updateWeatherBlock(); };
+
+/* ---------- экспорт ---------- */
+function download(name, text, type) { const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([text], { type })); a.download = name; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 2000); }
+const csvCell = v => { v = String(v ?? ''); return /[;"\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; };
+const HEAD = ['Объект', 'N', 'Время UTC', 'Широта', 'Долгота', 'Пройдено км', 'Осталось км', 'Курс (путевой)', 'Курс по компасу', 'Снос', 'ПС км/ч', 'Расст. до меня км', 'Время до меня', 'Участок'];
+const rowArr = ({ o, p }) => [o.name, p.i, fmtTime(p.t), p.lat.toFixed(6), p.lon.toFixed(6), (p.dist / 1000).toFixed(2), (p.left / 1000).toFixed(2),
+  p.track != null ? p.track.toFixed(1) : '', p.hdg != null ? p.hdg.toFixed(1) : '', p.drift != null ? p.drift.toFixed(1) : '', p.gs != null ? (p.gs * 3.6).toFixed(1) : '', ...toMe(o, p), segText(p)];
+$('csvBtn').onclick = () => { const r = rowsView(); if (!r.length) return toast('Нет данных'); download('trajectories.csv', '﻿' + [HEAD, ...r.map(rowArr)].map(a => a.map(csvCell).join(';')).join('\r\n'), 'text/csv;charset=utf-8'); };
+$('jsonBtn').onclick = () => {
+  const out = { generated: new Date().toISOString(), settings: S, objects: state.objects.filter(o => results.has(o.id)).map(o => ({
+    id: o.id, name: o.name, color: o.color, notes: results.get(o.id).notes,
+    points: results.get(o.id).pts.map(p => ({ n: p.i, kind: p.kind, time: fmtTime(p.t), lat: +p.lat.toFixed(6), lon: +p.lon.toFixed(6), distKm: +(p.dist / 1000).toFixed(2), leftKm: +(p.left / 1000).toFixed(2), trackDeg: p.track != null ? +p.track.toFixed(1) : null, headingDeg: p.hdg != null ? +p.hdg.toFixed(1) : null, gsKmh: p.gs != null ? +(p.gs * 3.6).toFixed(1) : null, distToMeKm: user.lat != null ? +(distMe(p) / 1000).toFixed(2) : null, segment: segText(p) })) })) };
+  if (!out.objects.length) return toast('Нет данных'); download('trajectories.json', JSON.stringify(out, null, 2), 'application/json');
+};
+$('copyBtn').onclick = async () => { const r = rowsView(); if (!r.length) return toast('Нет данных'); try { await navigator.clipboard.writeText([HEAD, ...r.map(rowArr)].map(a => a.join('\t')).join('\n')); toast('Таблица скопирована'); } catch { toast('Не удалось скопировать'); } };
+$('printBtn').onclick = () => window.print();
+
+/* PNG: схема всех маршрутов на canvas (без подложки, чтобы не упираться в CORS тайлов) */
+$('pngBtn').onclick = () => {
+  const items = state.objects.filter(o => o.active && results.has(o.id));
+  if (!items.length) return toast('Нет данных');
+  const W = 1300, H = 850, m = 90, c = document.createElement('canvas'); c.width = W; c.height = H;
+  const g = c.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, W, H);
+  const all = items.flatMap(o => results.get(o.id).pts);
+  const la = all.map(p => p.lat), lo = all.map(p => p.ulon), la0 = Math.min(...la), la1 = Math.max(...la), lo0 = Math.min(...lo), lo1 = Math.max(...lo);
+  const k = Math.cos((la0 + la1) / 2 * Math.PI / 180);
+  const s = Math.min((W - 2 * m) / Math.max((lo1 - lo0) * k, 1e-6), (H - 2 * m) / Math.max(la1 - la0, 1e-6)), cx = (lo0 + lo1) / 2, cy = (la0 + la1) / 2;
+  const X = v => W / 2 + (v - cx) * k * s, Y = v => H / 2 - (v - cy) * s;
+  g.textAlign = 'center'; g.font = '11px sans-serif';
+  items.forEach(o => {
+    const pts = results.get(o.id).pts;
+    g.strokeStyle = o.color; g.lineWidth = 3; g.beginPath(); pts.forEach((p, i) => i ? g.lineTo(X(p.ulon), Y(p.lat)) : g.moveTo(X(p.ulon), Y(p.lat))); g.stroke();
+    pts.forEach(p => {
+      const big = p.kind === 'wp' || p.kind === 'start' || p.end;
+      g.beginPath(); g.arc(X(p.ulon), Y(p.lat), big ? 7 : 4, 0, 7); g.fillStyle = p.kind === 'wp' || p.end ? '#fff' : o.color; g.fill(); g.lineWidth = 2; g.strokeStyle = o.color; g.stroke();
+      g.fillStyle = '#111'; g.fillText(p.kind === 'wp' ? 'WP' + (p.wpIdx + 1) : p.kind === 'start' ? 'Старт' : fmtTime(p.t).slice(11), X(p.ulon), Y(p.lat) - 11);
+    });
+  });
+  g.textAlign = 'left'; g.font = '14px sans-serif';
+  items.forEach((o, i) => { g.fillStyle = o.color; g.fillRect(20, 20 + i * 22, 14, 14); g.fillStyle = '#111'; g.fillText(o.name + ' — ' + (results.get(o.id).pts.slice(-1)[0].dist / 1000).toFixed(1) + ' км', 42, 32 + i * 22); });
+  c.toBlob(b => { const a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = 'trajectories.png'; a.click(); });
+};
+
+/* ---------- сценарии ---------- */
+function syncSettings() {
+  document.querySelectorAll('[data-s]').forEach(el => {
+    const v = S[el.dataset.s];
+    if (el.type === 'radio') el.checked = el.value === v; else if (el.type === 'checkbox') el.checked = !!v; else el.value = v;
+  });
+  applyWxMode();
+}
+function loadScenario(sc) {
+  S = { ...DEFAULT_S, ...(sc.settings || sc.S || {}) };
+  const st = sc.state || sc;
+  state.objects = (st.objects || []).map(normObj);
+  state.activeId = state.objects.some(o => o.id === st.activeId) ? st.activeId : state.objects[0]?.id || null;
+  results.clear(); pick = null; $('summary').textContent = 'Задайте объекты и нажмите «Рассчитать».'; $('notes').textContent = ''; $('stale').style.display = 'none';
+  syncSettings(); mark('panel', 'map', 'table'); changed(false); setTimeout(() => fitBounds(state.objects), 30);
+}
+$('addObj').onclick = () => { const o = newObj(state.objects.length + 1); state.objects.push(o); state.activeId = o.id; mark('panel', 'map', 'table'); changed(); };
+$('newBtn').onclick = () => { if (!confirm('Начать новый сценарий? Текущие объекты будут удалены.')) return; const o = newObj(1); loadScenario({ settings: DEFAULT_S, state: { objects: [o], activeId: o.id } }); };
+$('demoBtn').onclick = () => { const d = new Date(); d.setUTCMinutes(0, 0, 0); d.setUTCHours(d.getUTCHours() + 1); const dm = makeDemo(d.toISOString().slice(0, 16)); loadScenario({ settings: dm.settings, state: { objects: dm.objects, activeId: 'demo1' } }); toast('Загружен пример: 2 объекта по 3 WP, ветер вручную 8 м/с с запада'); };
+$('saveJson').onclick = () => download('scenario.json', JSON.stringify({ version: 2, settings: S, state }, null, 2), 'application/json');
+$('loadJson').onclick = () => $('fileIn').click();
+$('fileIn').onchange = async e => { const f = e.target.files[0]; if (!f) return; try { const sc = JSON.parse(await f.text()); if (!(sc.state || sc).objects) throw 0; loadScenario(sc); toast('Сценарий загружен'); } catch { toast('Некорректный файл сценария'); } e.target.value = ''; };
+
+/* ---------- геолокация пользователя (W3C Geolocation API) ----------
+   Запуск только по действию пользователя. watchPosition держит маркер «Вы здесь» актуальным.
+   Положение не сохраняется ни в сценарий, ни в localStorage (кроме введённых вручную координат для удобства). */
+const user = { lat: null, lng: null, accuracy: null, heading: null, speed: null, active: false, source: null };   // source: 'gps' | 'manual'
+let geoWatch = null, firstFix = false, lastTblPos = null, uMarker = null, uCircle = null, uHead = 'n';
+const userLayer = L.layerGroup().addTo(map);
+const GEO_ERR = {
+  1: 'Доступ к геолокации запрещён. Разрешите его для этого сайта (значок замка рядом с адресом → «Геолокация») и нажмите кнопку снова.',
+  2: 'Положение недоступно: нет сигнала GPS или сети. Выйдите на открытое место или введите координаты вручную.',
+  3: 'Время ожидания геолокации истекло. Проверьте, что GPS включён, и повторите попытку.'
+};
+const meIcon = cone => L.divIcon({ className: '', iconSize: [18, 18], iconAnchor: [9, 9], html: '<div class="me"><b></b>' + cone + '<i></i></div>' });
+
+function setGeoStatus(kind, text) {       // kind: off | wait | ok | err
+  const col = { off: '#9ca3af', wait: '#f59e0b', ok: '#16a34a', err: '#dc2626' }[kind];
+  $('uStatus').innerHTML = `<span class="dot" style="background:${col}"></span>${esc(text)}`;
+  $('geoBtn').textContent = geoWatch != null ? '⏹ Остановить' : '📍 Моё местоположение';
+}
+function showUser() {
+  if (user.lat == null) { $('uCoords').textContent = '—'; $('uAcc').textContent = '—'; $('uMove').textContent = '—'; return; }
+  $('uCoords').textContent = fmtCoord(user.lat, true, S.cfmt) + ', ' + fmtCoord(user.lng, false, S.cfmt);
+  $('uAcc').textContent = user.accuracy != null ? '± ' + Math.round(user.accuracy) + ' м' : 'задано вручную';
+  const mv = []; if (user.speed != null) mv.push((user.speed * 3.6).toFixed(0) + ' км/ч'); if (user.heading != null) mv.push(Math.round(user.heading) + '°');
+  $('uMove').textContent = mv.join(' · ') || '—';
+}
+function drawUser() {
+  if (user.lat == null) { userLayer.clearLayers(); uMarker = uCircle = null; return; }
+  const ll = [user.lat, user.lng];
+  const cone = user.heading != null ? `<div class="cone" style="transform:rotate(${user.heading}deg)"></div>` : '';
+  const key = cone ? Math.round(user.heading / 5) : 'n';       // иконку пересоздаём только при заметном повороте
+  if (!uMarker) { uMarker = L.marker(ll, { icon: meIcon(cone), zIndexOffset: 1000 }).addTo(userLayer).bindTooltip('Вы здесь'); uHead = key; }
+  else { uMarker.setLatLng(ll); if (key !== uHead) { uMarker.setIcon(meIcon(cone)); uHead = key; } }
+  if (user.source === 'gps' && user.accuracy > 0 && user.accuracy < 50000) {
+    if (!uCircle) uCircle = L.circle(ll, { radius: user.accuracy, color: '#2563eb', weight: 1, fillOpacity: .12, interactive: false }).addTo(userLayer);
+    else uCircle.setLatLng(ll).setRadius(user.accuracy);
+  } else if (uCircle) { userLayer.removeLayer(uCircle); uCircle = null; }
+}
+function clearUser() {
+  Object.assign(user, { lat: null, lng: null, accuracy: null, heading: null, speed: null, active: false, source: null });
+  drawUser(); showUser(); lastTblPos = null; if (results.size) mark('table');
+}
+function refreshTableIfMoved() {                                // таблицу обновляем, только если сместились > 15 м
+  const cur = { lat: user.lat, lon: user.lng };
+  if (!lastTblPos || geo.dist(lastTblPos, cur, 'gc') > 15) { lastTblPos = cur; if (results.size) mark('table'); }
+}
+function onGeoPos(pos) {
+  const c = pos.coords;
+  Object.assign(user, { lat: c.latitude, lng: c.longitude, accuracy: c.accuracy, heading: Number.isFinite(c.heading) ? c.heading : null, speed: Number.isFinite(c.speed) ? c.speed : null, active: true, source: 'gps' });
+  $('uMsg').textContent = ''; setGeoStatus('ok', 'Активно');
+  drawUser(); showUser(); refreshTableIfMoved();
+  if (!firstFix) { firstFix = true; map.flyTo([user.lat, user.lng], Math.max(map.getZoom(), 12)); }
+}
+function onGeoErr(err) {
+  const msg = GEO_ERR[err.code] || ('Ошибка геолокации: ' + err.message);
+  $('uMsg').textContent = msg; $('uManualBox').open = true; toast(msg);
+  if (err.code === 1) {                                         // отказ — наблюдение бесполезно
+    if (geoWatch != null) navigator.geolocation.clearWatch(geoWatch); geoWatch = null; clearUser(); setGeoStatus('err', 'Ошибка доступа');
+  } else if (user.active) setGeoStatus('wait', 'Сигнал потерян, ждём…');
+  else setGeoStatus('err', err.code === 3 ? 'Тайм-аут' : 'Положение недоступно');
+}
+function startGeo() {
+  if (!('geolocation' in navigator)) { setGeoStatus('err', 'Браузер не поддерживает геолокацию'); $('uMsg').textContent = 'Введите координаты вручную.'; $('uManualBox').open = true; return; }
+  if (geoWatch != null) return;
+  firstFix = false; $('uMsg').textContent = '';
+  geoWatch = navigator.geolocation.watchPosition(onGeoPos, onGeoErr, { enableHighAccuracy: true, timeout: 10000, maximumAge: 5000 });
+  setGeoStatus('wait', 'Определение…');
+}
+function stopGeo() {
+  if (geoWatch != null) navigator.geolocation.clearWatch(geoWatch);
+  geoWatch = null; clearUser(); $('uMsg').textContent = ''; setGeoStatus('off', 'Выключено');
+}
+function centerMe() {
+  if (user.lat == null) { toast('Определяю положение…'); startGeo(); return; }
+  setTab('map'); map.flyTo([user.lat, user.lng], Math.max(map.getZoom(), 13));
+}
+const geoMapAction = () => user.lat != null ? centerMe() : startGeo();
+
+function geoInit() {
+  let w = '';
+  if (!window.isSecureContext) w = '⚠ Страница открыта не по HTTPS — браузер заблокирует геолокацию. Откройте её по https:// или на http://localhost (например, python -m http.server 8000), либо введите координаты вручную.';
+  else if (location.protocol === 'file:') w = 'ℹ Страница открыта как файл. На телефоне геолокация так обычно не работает — разместите файл на HTTPS-хостинге (GitHub Pages, Netlify) или откройте через локальный сервер.';
+  $('uWarn').textContent = w; $('uWarn').style.display = w ? 'block' : 'none';
+  try { const m = JSON.parse(localStorage.getItem('traj-user-manual')); if (m && okLL(m.lat, m.lng)) { $('uLat').value = m.lat; $('uLon').value = m.lng; } } catch (e) { }
+  setGeoStatus('off', 'Выключено'); showUser();
+  $('geoBtn').onclick = () => geoWatch != null ? stopGeo() : startGeo();
+  document.querySelectorAll('.js-center-me').forEach(b => b.onclick = centerMe);
+  document.querySelectorAll('.js-geo-map').forEach(b => b.onclick = geoMapAction);
+  $('uApply').onclick = () => {                                 // fallback: ручные координаты пользователя
+    const a = parseFloat($('uLat').value), b = parseFloat($('uLon').value);
+    if (!okLL(a, b)) return toast('Введите широту −90…90 и долготу −180…180');
+    if (geoWatch != null) { navigator.geolocation.clearWatch(geoWatch); geoWatch = null; }
+    Object.assign(user, { lat: a, lng: b, accuracy: null, heading: null, speed: null, active: true, source: 'manual' });
+    try { localStorage.setItem('traj-user-manual', JSON.stringify({ lat: a, lng: b })); } catch (e) { }
+    $('uMsg').textContent = ''; setGeoStatus('ok', 'Задано вручную'); drawUser(); showUser(); lastTblPos = null; refreshTableIfMoved(); map.flyTo([a, b], Math.max(map.getZoom(), 12));
+  };
+  $('uClear').onclick = stopGeo;
+}
+const GeoCtl = L.Control.extend({ options: { position: 'topleft' }, onAdd() {      // кнопка-иконка на самой карте
+  const b = L.DomUtil.create('button', 'geo-btn'); b.type = 'button'; b.innerHTML = '📍'; b.title = 'Моё местоположение';
+  L.DomEvent.disableClickPropagation(b); L.DomEvent.on(b, 'click', geoMapAction); return b; } });
+map.addControl(new GeoCtl());
+
+/* ---------- тема, вкладки, инициализация ---------- */
+$('themeBtn').onclick = () => { const d = document.documentElement; d.dataset.theme = d.dataset.theme === 'dark' ? 'light' : 'dark'; try { localStorage.setItem('traj-theme', d.dataset.theme); } catch (e) { } };
+function setTab(t) { document.body.dataset.tab = t; document.querySelectorAll('.tabs button').forEach(b => b.classList.toggle('on', b.dataset.t === t)); setTimeout(() => map.invalidateSize(), 60); }
+document.querySelectorAll('.tabs button').forEach(b => b.onclick = () => setTab(b.dataset.t));
+window.addEventListener('resize', () => map.invalidateSize());
+(function init() {
+  try { if (localStorage.getItem('traj-theme') === 'dark') document.documentElement.dataset.theme = 'dark'; } catch (e) { }
+  let saved = null; try { saved = JSON.parse(localStorage.getItem('traj-multi-v1')); } catch (e) { }
+  if (saved && saved.state && saved.state.objects && saved.state.objects.length) loadScenario({ settings: saved.S, state: saved.state });
+  else { const o = newObj(1); loadScenario({ settings: DEFAULT_S, state: { objects: [o], activeId: o.id } }); }
+  updateWeatherBlock(); geoInit();
+})();
+</script>
+</body>
+</html>
